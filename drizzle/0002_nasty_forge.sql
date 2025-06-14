@@ -1,0 +1,1 @@
+ALTER TABLE "issues" ADD COLUMN "updated_at" timestamp DEFAULT now();

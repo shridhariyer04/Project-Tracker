@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1748943674373,
+      "tag": "0000_aromatic_proemial_gods",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1748944331584,
+      "tag": "0001_rainy_excalibur",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1749626797382,
+      "tag": "0002_nasty_forge",
+      "breakpoints": true
+    }
+  ]
+}
