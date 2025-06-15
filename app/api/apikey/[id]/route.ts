@@ -8,9 +8,9 @@ import { eq, and } from "drizzle-orm";
 // GET single API key
 export async function GET(
   request: NextRequest,
-  context: { params: { id: string } }
+  { params }: { params: Record<string, string> }
 ) {
-  const { id } = context.params;
+  const id = params.id;
   const { userId } = await auth();
 
   if (!userId) {
@@ -44,9 +44,9 @@ export async function GET(
 // UPDATE API key
 export async function PUT(
   request: NextRequest,
-  context: { params: { id: string } }
+  { params }: { params: Record<string, string> }
 ) {
-  const { id } = context.params;
+  const id = params.id;
   const { userId } = await auth();
 
   if (!userId) {
@@ -120,9 +120,9 @@ export async function PUT(
 // DELETE API key
 export async function DELETE(
   request: NextRequest,
-  context: { params: { id: string } }
+  { params }: { params: Record<string, string> }
 ) {
-  const { id } = context.params;
+  const id = params.id;
   const { userId } = await auth();
 
   if (!userId) {
