@@ -5,6 +5,7 @@ import axios from "axios";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
+import { issues } from "@/lib/db/schemas";
 
 type Project = {
   id: string;
@@ -20,6 +21,7 @@ type Project = {
   apiKeys: ApiKey[];
 };
 
+
 type ApiKey = {
   id: string;
   projectId: string;
@@ -28,6 +30,19 @@ type ApiKey = {
   createdAt: string;
   updatedAt: string;
 };
+export type Issue = {
+  id: number;
+  projectId: string;
+  title: string;
+  description: string | null;
+  userId: string;
+  status: string;
+  priority: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+
 
 export default function ProjectPage() {
   const { id } = useParams();

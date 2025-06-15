@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "../../../../lib/db";
 import { projects } from "../../../../lib/db/schemas/projects";
@@ -7,7 +7,7 @@ import { eq, and } from "drizzle-orm";
 
 // GET single API key
 export async function GET(
-  req: Request,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   const { userId } = await auth();
@@ -21,7 +21,7 @@ export async function GET(
     const result = await db
       .select({
         apiKey: apiKeys,
-        project: projects
+        project: projects,
       })
       .from(apiKeys)
       .innerJoin(projects, eq(apiKeys.projectId, projects.id))
@@ -29,7 +29,10 @@ export async function GET(
       .limit(1);
 
     if (result.length === 0) {
-      return NextResponse.json({ message: "API key not found or unauthorized" }, { status: 404 });
+      return NextResponse.json(
+        { message: "API key not found or unauthorized" },
+        { status: 404 }
+      );
     }
 
     console.log("GET /api/apikeys/[id] - Fetched API key:", result[0].apiKey);
@@ -42,7 +45,7 @@ export async function GET(
 
 // UPDATE API key
 export async function PUT(
-  req: Request,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   const { userId } = await auth();
@@ -66,7 +69,7 @@ export async function PUT(
     const existingResult = await db
       .select({
         apiKey: apiKeys,
-        project: projects
+        project: projects,
       })
       .from(apiKeys)
       .innerJoin(projects, eq(apiKeys.projectId, projects.id))
@@ -74,7 +77,10 @@ export async function PUT(
       .limit(1);
 
     if (existingResult.length === 0) {
-      return NextResponse.json({ message: "API key not found or unauthorized" }, { status: 404 });
+      return NextResponse.json(
+        { message: "API key not found or unauthorized" },
+        { status: 404 }
+      );
     }
 
     const projectId = existingResult[0].apiKey.projectId;
@@ -113,7 +119,6 @@ export async function PUT(
 
     console.log("PUT /api/apikeys/[id] - Updated API key:", updatedApiKey[0]);
     return NextResponse.json(updatedApiKey[0]);
-
   } catch (error: any) {
     console.error("PUT /api/apikeys/[id] - Error:", error);
     return NextResponse.json({ message: "Internal server error" }, { status: 500 });
@@ -122,7 +127,7 @@ export async function PUT(
 
 // DELETE API key
 export async function DELETE(
-  req: Request,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   const { userId } = await auth();
@@ -136,7 +141,7 @@ export async function DELETE(
     const existingResult = await db
       .select({
         apiKey: apiKeys,
-        project: projects
+        project: projects,
       })
       .from(apiKeys)
       .innerJoin(projects, eq(apiKeys.projectId, projects.id))
@@ -144,17 +149,17 @@ export async function DELETE(
       .limit(1);
 
     if (existingResult.length === 0) {
-      return NextResponse.json({ message: "API key not found or unauthorized" }, { status: 404 });
+      return NextResponse.json(
+        { message: "API key not found or unauthorized" },
+        { status: 404 }
+      );
     }
 
     // Delete the API key
-    await db
-      .delete(apiKeys)
-      .where(eq(apiKeys.id, params.id));
+    await db.delete(apiKeys).where(eq(apiKeys.id, params.id));
 
     console.log("DELETE /api/apikeys/[id] - Deleted API key:", params.id);
     return NextResponse.json({ message: "API key deleted successfully" });
-
   } catch (error: any) {
     console.error("DELETE /api/apikeys/[id] - Error:", error);
     return NextResponse.json({ message: "Internal server error" }, { status: 500 });
