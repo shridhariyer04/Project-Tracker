@@ -5,12 +5,17 @@ import { projects } from "../../../../lib/db/schemas/projects";
 import { apiKeys } from "../../../../lib/db/schemas/apikey";
 import { eq, and } from "drizzle-orm";
 
+// Define the proper type for params
+interface RouteContext {
+  params: Promise<{ id: string }>;
+}
+
 // GET single API key
 export async function GET(
   request: NextRequest,
-  { params }: { params: Record<string, string> }
+  context: RouteContext
 ) {
-  const id = params.id;
+  const { id } = await context.params;
   const { userId } = await auth();
 
   if (!userId) {
@@ -44,9 +49,9 @@ export async function GET(
 // UPDATE API key
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Record<string, string> }
+  context: RouteContext
 ) {
-  const id = params.id;
+  const { id } = await context.params;
   const { userId } = await auth();
 
   if (!userId) {
@@ -120,9 +125,9 @@ export async function PUT(
 // DELETE API key
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Record<string, string> }
+  context: RouteContext
 ) {
-  const id = params.id;
+  const { id } = await context.params;
   const { userId } = await auth();
 
   if (!userId) {
