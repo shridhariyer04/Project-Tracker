@@ -1,18 +1,24 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
-import { projects,  } from "@/lib/db/schemas/projects";
+import { projects } from "@/lib/db/schemas/projects";
 import { apiKeys } from "@/lib/db/schemas/apikey";
 import { eq, and } from "drizzle-orm";
+
+// Define the proper type for params
+interface RouteContext {
+  params: Promise<{ id: string }>;
+}
 
 // GET single project by ID
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } }
+  context: RouteContext
 ) {
+  const { id } = await context.params;
   const { userId } = await auth();
 
-  console.log("GET /api/projects/[id] - userId:", userId, "projectId:", params.id);
+  console.log("GET /api/projects/[id] - userId:", userId, "projectId:", id);
 
   if (!userId) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
@@ -22,7 +28,7 @@ export async function GET(
     const project = await db
       .select()
       .from(projects)
-      .where(and(eq(projects.id, params.id), eq(projects.userId, userId)))
+      .where(and(eq(projects.id, id), eq(projects.userId, userId)))
       .limit(1);
 
     if (project.length === 0) {
@@ -33,7 +39,7 @@ export async function GET(
     const projectApiKeys = await db
       .select()
       .from(apiKeys)
-      .where(eq(apiKeys.projectId, params.id));
+      .where(eq(apiKeys.projectId, id));
 
     const projectWithApiKeys = {
       ...project[0],
@@ -51,11 +57,12 @@ export async function GET(
 // PUT update project by ID
 export async function PUT(
   req: Request,
-  { params }: { params: { id: string } }
+  context: RouteContext
 ) {
+  const { id } = await context.params;
   const { userId } = await auth();
 
-  console.log("PUT /api/projects/[id] - userId:", userId, "projectId:", params.id);
+  console.log("PUT /api/projects/[id] - userId:", userId, "projectId:", id);
 
   if (!userId) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
@@ -80,7 +87,7 @@ export async function PUT(
       const existingProject = await tx
         .select()
         .from(projects)
-        .where(and(eq(projects.id, params.id), eq(projects.userId, userId)))
+        .where(and(eq(projects.id, id), eq(projects.userId, userId)))
         .limit(1);
 
       if (existingProject.length === 0) {
@@ -99,7 +106,7 @@ export async function PUT(
           endDate: endDate ? new Date(endDate) : null,
           updatedAt: new Date(),
         })
-        .where(and(eq(projects.id, params.id), eq(projects.userId, userId)))
+        .where(and(eq(projects.id, id), eq(projects.userId, userId)))
         .returning();
 
       if (updatedProject.length === 0) {
@@ -110,7 +117,7 @@ export async function PUT(
       // First, delete all existing API keys for this project
       await tx
         .delete(apiKeys)
-        .where(eq(apiKeys.projectId, params.id));
+        .where(eq(apiKeys.projectId, id));
 
       // Then insert new API keys if provided
       let insertedApiKeys: typeof apiKeys.$inferSelect[] = [];
@@ -124,7 +131,7 @@ export async function PUT(
             .insert(apiKeys)
             .values(
               validApiKeys.map((apiKey: any) => ({
-                projectId: params.id,
+                projectId: id,
                 name: apiKey.name.trim(),
                 key: apiKey.key.trim(),
                 createdAt: new Date(),
@@ -160,19 +167,20 @@ export async function PUT(
 // PATCH update project by ID (alternative method)
 export async function PATCH(
   req: Request,
-  { params }: { params: { id: string } }
+  context: RouteContext
 ) {
-  return PUT(req, { params }); // Reuse PUT logic
+  return PUT(req, context); // Reuse PUT logic
 }
 
 // DELETE project by ID
 export async function DELETE(
   req: Request,
-  { params }: { params: { id: string } }
+  context: RouteContext
 ) {
+  const { id } = await context.params;
   const { userId } = await auth();
 
-  console.log("DELETE /api/projects/[id] - userId:", userId, "projectId:", params.id);
+  console.log("DELETE /api/projects/[id] - userId:", userId, "projectId:", id);
 
   if (!userId) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
@@ -182,7 +190,7 @@ export async function DELETE(
     // The cascade delete will automatically remove associated API keys
     const deletedProject = await db
       .delete(projects)
-      .where(and(eq(projects.id, params.id), eq(projects.userId, userId)))
+      .where(and(eq(projects.id, id), eq(projects.userId, userId)))
       .returning();
 
     if (deletedProject.length === 0) {
