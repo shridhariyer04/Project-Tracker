@@ -7,9 +7,10 @@ import { eq, and } from "drizzle-orm";
 
 // GET single API key
 export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  context: { params: { id: string } }
 ) {
+  const { id } = context.params;
   const { userId } = await auth();
 
   if (!userId) {
@@ -19,13 +20,10 @@ export async function GET(
   try {
     // Get the API key with project info to verify ownership
     const result = await db
-      .select({
-        apiKey: apiKeys,
-        project: projects,
-      })
+      .select({ apiKey: apiKeys, project: projects })
       .from(apiKeys)
       .innerJoin(projects, eq(apiKeys.projectId, projects.id))
-      .where(and(eq(apiKeys.id, params.id), eq(projects.userId, userId)))
+      .where(and(eq(apiKeys.id, id), eq(projects.userId, userId)))
       .limit(1);
 
     if (result.length === 0) {
@@ -45,9 +43,10 @@ export async function GET(
 
 // UPDATE API key
 export async function PUT(
-  req: NextRequest,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  context: { params: { id: string } }
 ) {
+  const { id } = context.params;
   const { userId } = await auth();
 
   if (!userId) {
@@ -55,7 +54,7 @@ export async function PUT(
   }
 
   try {
-    const body = await req.json();
+    const body = await request.json();
     const { name, key } = body;
 
     if (!name || !key) {
@@ -67,13 +66,10 @@ export async function PUT(
 
     // First verify the API key belongs to a project owned by the user
     const existingResult = await db
-      .select({
-        apiKey: apiKeys,
-        project: projects,
-      })
+      .select({ apiKey: apiKeys, project: projects })
       .from(apiKeys)
       .innerJoin(projects, eq(apiKeys.projectId, projects.id))
-      .where(and(eq(apiKeys.id, params.id), eq(projects.userId, userId)))
+      .where(and(eq(apiKeys.id, id), eq(projects.userId, userId)))
       .limit(1);
 
     if (existingResult.length === 0) {
@@ -93,13 +89,13 @@ export async function PUT(
         and(
           eq(apiKeys.projectId, projectId),
           eq(apiKeys.name, name.trim()),
-          eq(apiKeys.id, params.id) // Exclude current API key from check
+          eq(apiKeys.id, id) // Exclude current API key from check
         )
       )
       .limit(1);
 
     // If we found a duplicate that's not the current API key, return error
-    if (duplicateCheck.length > 0 && duplicateCheck[0].id !== params.id) {
+    if (duplicateCheck.length > 0 && duplicateCheck[0].id !== id) {
       return NextResponse.json(
         { message: "An API key with this name already exists in this project" },
         { status: 409 }
@@ -109,12 +105,8 @@ export async function PUT(
     // Update the API key
     const updatedApiKey = await db
       .update(apiKeys)
-      .set({
-        name: name.trim(),
-        key: key.trim(),
-        updatedAt: new Date(),
-      })
-      .where(eq(apiKeys.id, params.id))
+      .set({ name: name.trim(), key: key.trim(), updatedAt: new Date() })
+      .where(eq(apiKeys.id, id))
       .returning();
 
     console.log("PUT /api/apikeys/[id] - Updated API key:", updatedApiKey[0]);
@@ -127,9 +119,10 @@ export async function PUT(
 
 // DELETE API key
 export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  context: { params: { id: string } }
 ) {
+  const { id } = context.params;
   const { userId } = await auth();
 
   if (!userId) {
@@ -139,13 +132,10 @@ export async function DELETE(
   try {
     // First verify the API key belongs to a project owned by the user
     const existingResult = await db
-      .select({
-        apiKey: apiKeys,
-        project: projects,
-      })
+      .select({ apiKey: apiKeys, project: projects })
       .from(apiKeys)
       .innerJoin(projects, eq(apiKeys.projectId, projects.id))
-      .where(and(eq(apiKeys.id, params.id), eq(projects.userId, userId)))
+      .where(and(eq(apiKeys.id, id), eq(projects.userId, userId)))
       .limit(1);
 
     if (existingResult.length === 0) {
@@ -156,9 +146,9 @@ export async function DELETE(
     }
 
     // Delete the API key
-    await db.delete(apiKeys).where(eq(apiKeys.id, params.id));
+    await db.delete(apiKeys).where(eq(apiKeys.id, id));
 
-    console.log("DELETE /api/apikeys/[id] - Deleted API key:", params.id);
+    console.log("DELETE /api/apikeys/[id] - Deleted API key:", id);
     return NextResponse.json({ message: "API key deleted successfully" });
   } catch (error: any) {
     console.error("DELETE /api/apikeys/[id] - Error:", error);
