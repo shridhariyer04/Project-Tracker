@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@clerk/nextjs";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import axios from "axios";
 
@@ -33,11 +33,30 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastFetch, setLastFetch] = useState<number>(0);
+  
+  // Use refs to track intervals and timeouts
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const visibilityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const fetchProjects = useCallback(async (showLoading = true) => {
+  // Minimum time between API calls (5 minutes)
+  const MIN_FETCH_INTERVAL = 5 * 60 * 1000; // 5 minutes
+  
+  // Debounce time for visibility/focus events
+  const DEBOUNCE_TIME = 2000; // 2 seconds
+
+  const fetchProjects = useCallback(async (showLoading = true, force = false) => {
     try {
       if (!userId) {
         setLoading(false);
+        return;
+      }
+
+      const now = Date.now();
+      
+      // Rate limiting: don't fetch if we fetched recently (unless forced)
+      if (!force && now - lastFetch < MIN_FETCH_INTERVAL) {
+        console.log("Skipping fetch - too soon after last fetch");
         return;
       }
 
@@ -45,7 +64,6 @@ export default function Dashboard() {
 
       const token = await getToken();
       console.log("Fetch /api/projects - userId:", userId);
-      console.log("Fetch /api/projects - Token:", token);
 
       if (!token) {
         throw new Error("Failed to retrieve session token");
@@ -61,44 +79,79 @@ export default function Dashboard() {
       console.log("Dashboard - Fetched projects:", response.data);
       setProjects(response.data);
       setError(null);
+      setLastFetch(now);
     } catch (err: any) {
       console.error("Failed to fetch projects:", err.response?.data || err.message);
       setError(err.response?.data?.message || err.message || "Failed to fetch projects");
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [userId, getToken]);
+  }, [userId, getToken, lastFetch]);
 
   // Initial fetch
   useEffect(() => {
-    fetchProjects();
-  }, [fetchProjects]);
+    fetchProjects(true, true); // Force initial fetch
+  }, [userId, getToken]); // Removed fetchProjects from deps to avoid infinite loop
 
-  // Auto-refresh every 30 seconds
+  // Intelligent refresh: only when user is active and hasn't fetched recently
   useEffect(() => {
     if (!userId) return;
 
-    const interval = setInterval(() => {
-      console.log("Auto-refreshing projects...");
-      fetchProjects(false); // Don't show loading spinner for auto-refresh
-    }, 30000); // 30 seconds
+    const scheduleNextRefresh = () => {
+      // Clear any existing timeout
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
 
-    return () => clearInterval(interval);
-  }, [userId, fetchProjects]);
+      // Schedule refresh for 10 minutes from now
+      refreshTimeoutRef.current = setTimeout(() => {
+        // Only refresh if document is visible and user seems active
+        if (!document.hidden) {
+          console.log("Scheduled refresh - fetching projects...");
+          fetchProjects(false, false); // Don't force, respect rate limiting
+          scheduleNextRefresh(); // Schedule next refresh
+        } else {
+          // If document is hidden, check again in 1 minute
+          refreshTimeoutRef.current = setTimeout(scheduleNextRefresh, 60000);
+        }
+      }, 10 * 60 * 1000); // 10 minutes
+    };
 
-  // Refetch projects when the component becomes visible again
+    scheduleNextRefresh();
+
+    return () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+    };
+  }, [userId]); // Removed fetchProjects from deps
+
+  // Debounced refetch on visibility change and focus
   useEffect(() => {
+    const debouncedFetch = () => {
+      // Clear any existing timeout
+      if (visibilityTimeoutRef.current) {
+        clearTimeout(visibilityTimeoutRef.current);
+      }
+
+      // Debounce the fetch call
+      visibilityTimeoutRef.current = setTimeout(() => {
+        if (userId) {
+          console.log("Page became visible/focused, checking if refresh needed...");
+          fetchProjects(false, false); // Don't force, respect rate limiting
+        }
+      }, DEBOUNCE_TIME);
+    };
+
     const handleVisibilityChange = () => {
       if (!document.hidden && userId) {
-        console.log("Page became visible, refetching projects...");
-        fetchProjects(false);
+        debouncedFetch();
       }
     };
 
     const handleFocus = () => {
       if (userId) {
-        console.log("Window focused, refetching projects...");
-        fetchProjects(false);
+        debouncedFetch();
       }
     };
 
@@ -108,8 +161,16 @@ export default function Dashboard() {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleFocus);
+      if (visibilityTimeoutRef.current) {
+        clearTimeout(visibilityTimeoutRef.current);
+      }
     };
-  }, [userId, fetchProjects]);
+  }, [userId]); // Removed fetchProjects from deps
+
+  // Manual refresh function for the retry button
+  const handleManualRefresh = useCallback(() => {
+    fetchProjects(true, true); // Force refresh when user manually clicks
+  }, [fetchProjects]);
 
   if (loading) {
     return (
@@ -144,7 +205,7 @@ export default function Dashboard() {
           </h2>
           <p className="text-gray-600 mb-4">{error}</p>
           <button
-            onClick={() => fetchProjects()}
+            onClick={handleManualRefresh}
             className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition-colors"
           >
             Try Again
@@ -165,8 +226,23 @@ export default function Dashboard() {
               <p className="text-gray-600 mt-1">
                 Manage and track your development projects
               </p>
+              {lastFetch > 0 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Last updated: {new Date(lastFetch).toLocaleTimeString()}
+                </p>
+              )}
             </div>
             <div className="flex gap-3">
+              <button
+                onClick={handleManualRefresh}
+                className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-4 py-2 rounded-lg shadow-sm transition-colors duration-200 flex items-center gap-2"
+                title="Refresh projects"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </button>
               <Link href="/dashboard/create-project">
                 <button className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-3 rounded-lg shadow-sm transition-colors duration-200 flex items-center gap-2">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
