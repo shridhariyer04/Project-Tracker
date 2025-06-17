@@ -3,6 +3,7 @@
 import { useAuth } from "@clerk/nextjs";
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import axios from "axios";
 
 type ApiKey = {
@@ -29,7 +30,8 @@ type Project = {
 };
 
 export default function Dashboard() {
-  const { userId, getToken } = useAuth();
+  const { userId, getToken, isSignedIn } = useAuth();
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -172,6 +174,17 @@ export default function Dashboard() {
     fetchProjects(true, true); // Force refresh when user manually clicks
   }, [fetchProjects]);
 
+  // Handle get started button click with authentication check
+  const handleGetStarted = useCallback(() => {
+    if (isSignedIn) {
+      // User is signed in, navigate to create project
+      router.push('/dashboard');
+    } else {
+      // User is not signed in, navigate to sign in page
+      router.push('/sign-in');
+    }
+  }, [isSignedIn, router]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -271,11 +284,12 @@ export default function Dashboard() {
                 <p className="text-gray-600 mb-6">
                   Get started by creating your first project to track issues and manage development.
                 </p>
-                <Link href="/dashboard/create-project">
-                  <button className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2 rounded-lg transition-colors duration-200">
-                    Create Your First Project
-                  </button>
-                </Link>
+                <button
+                  onClick={handleGetStarted}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2 rounded-lg transition-colors duration-200"
+                >
+                  {isSignedIn ? 'Create Your First Project' : 'Sign In to Get Started'}
+                </button>
               </div>
             </div>
           ) : (

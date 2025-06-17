@@ -1,13 +1,12 @@
 import { type Metadata } from 'next';
 import {
   ClerkProvider,
-  SignInButton,
-  SignUpButton,
   SignedIn,
   SignedOut,
   UserButton,
 } from '@clerk/nextjs';
 import { Geist, Geist_Mono } from 'next/font/google';
+import Link from 'next/link';
 import './globals.css';
 
 const geistSans = Geist({
@@ -40,8 +39,16 @@ export default function RootLayout({
             </div>
             <div className="flex items-center gap-4">
               <SignedOut>
-                <SignInButton />
-                <SignUpButton />
+                <Link href="/sign-in">
+                  <button className="text-black font-medium px-4 py-2 hover:text-gray-700 transition-colors">
+                    Sign In
+                  </button>
+                </Link>
+                <Link href="/sign-up">
+                  <button className="text-black font-medium px-4 py-2 hover:text-gray-700 transition-colors">
+                    Sign Up
+                  </button>
+                </Link>
               </SignedOut>
               <SignedIn>
                 <UserButton />
