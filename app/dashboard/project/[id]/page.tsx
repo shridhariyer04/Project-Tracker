@@ -5,7 +5,6 @@ import axios from "axios";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
-import { issues } from "@/lib/db/schemas";
 
 type Project = {
   id: string;
@@ -21,7 +20,6 @@ type Project = {
   apiKeys: ApiKey[];
 };
 
-
 type ApiKey = {
   id: string;
   projectId: string;
@@ -30,7 +28,8 @@ type ApiKey = {
   createdAt: string;
   updatedAt: string;
 };
-export type Issue = {
+
+type Issue = {
   id: number;
   projectId: string;
   title: string;
@@ -42,13 +41,12 @@ export type Issue = {
   updatedAt: Date;
 };
 
-
-
 export default function ProjectPage() {
   const { id } = useParams();
   const { getToken } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
   const [issues, setIssues] = useState<Issue[]>([]);
+  const [loading, setLoading] = useState<boolean>(true); // Added loading state
   const [editableProject, setEditableProject] = useState<Project | null>(null);
   const [newIssue, setNewIssue] = useState({
     title: "",
@@ -64,81 +62,103 @@ export default function ProjectPage() {
   const [copiedApiKeyId, setCopiedApiKeyId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!id) return;
+  if (!id) {
+    setLoading(false);
+    return;
+  }
 
-    const fetchProjectAndIssues = async () => {
-      try {
-        const token = await getToken();
-        console.log("Fetch Data - Token:", token);
-        if (!token) {
-          throw new Error("Failed to retrieve session token");
-        }
+  const abortController = new AbortController();
 
-        const projectRes = await axios.get("/api/projects", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        console.log("Fetch Data - Projects Response:", projectRes.data);
-        const userProjects = projectRes.data;
-        const foundProject = userProjects.find((p: Project) => p.id === id);
-        console.log("Fetch Data - Found Project:", foundProject);
-
-        let finalProject = foundProject;
-        if (!foundProject) {
-          const singleProjectRes = await axios.get(`/api/projects/${id}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          console.log("Fetch Data - Single Project Response:", singleProjectRes.data);
-          finalProject = singleProjectRes.data;
-        }
-
-        setProject(finalProject || null);
-        console.log("Fetch Data - Set Project:", finalProject);
-
-        const issuesRes = await axios.get(`/api/issues?projectId=${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        console.log("Fetch Data - Issues Response:", issuesRes.data);
-        setIssues(issuesRes.data || []);
-      } catch (error: any) {
-        console.error("Failed to fetch data:", error.response?.data || error.message);
+  const fetchProjectAndIssues = async () => {
+    try {
+      setLoading(true);
+      const token = await getToken();
+      if (!token) {
+        throw new Error("Failed to retrieve session token");
       }
-    };
-    fetchProjectAndIssues();
-  }, [id, getToken]);
+
+      // Fetch project directly by ID
+      const projectRes = await axios.get(`/api/projects/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: abortController.signal,
+      });
+      
+      // Check if request was aborted before setting state
+      if (!abortController.signal.aborted) {
+        setProject(projectRes.data || null);
+      }
+
+      const issuesRes = await axios.get(`/api/issues?projectId=${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: abortController.signal,
+      });
+      
+      // Check if request was aborted before setting state
+      if (!abortController.signal.aborted) {
+        setIssues(issuesRes.data || []);
+      }
+    } catch (error: any) {
+      if (error.name === "AbortError" || error.message === "canceled") {
+        // Silently ignore abort errors - don't log or set state
+        return;
+      }
+      console.error("Failed to fetch data:", error.response?.data || error.message);
+      if (!abortController.signal.aborted) {
+        if (error.response?.status === 404 || error.response?.status === 403) {
+          setProject(null);
+        }
+      }
+    } finally {
+      // Only set loading to false if request wasn't aborted
+      if (!abortController.signal.aborted) {
+        setLoading(false);
+      }
+    }
+  };
+  
+  fetchProjectAndIssues();
+
+  return () => {
+    abortController.abort(); // Cancel ongoing requests on cleanup
+  };
+}, [id, getToken]);
 
   const handleCreateApiKey = async (e: React.FormEvent) => {
-  e.preventDefault();
-  try {
-    const token = await getToken();
-    if (!token) {
-      throw new Error("Failed to retrieve session token");
-    }
+    e.preventDefault();
+    try {
+      const token = await getToken();
+      if (!token) {
+        throw new Error("Failed to retrieve session token");
+      }
 
-    const response = await axios.post("/api/apikey", {
-      projectId: id,
-      name: newApiKey.name,
-      key: newApiKey.key,
-    }, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+      const response = await axios.post(
+        "/api/apikey",
+        {
+          projectId: id,
+          name: newApiKey.name,
+          key: newApiKey.key,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
 
-    // Update the project state with the new API key
-    if (project) {
-      const updatedProject = {
-        ...project,
-        apiKeys: [...(project.apiKeys || []), response.data]
-      };
-      setProject(updatedProject);
+      if (project) {
+        const updatedProject = {
+          ...project,
+          apiKeys: [...(project.apiKeys || []), response.data],
+        };
+        setProject(updatedProject);
+      }
+
+      setNewApiKey({ name: "", key: "" });
+      alert("API key created successfully");
+    } catch (error: any) {
+      console.error("Failed to create API key:", error.response?.data || error.message);
+      alert(`Failed to create API key: ${error.response?.data?.message || error.message}`);
     }
-    
-    // Clear the form
-    setNewApiKey({ name: "", key: "" });
-    alert("API key created successfully");
-  } catch (error: any) {
-    console.error("Failed to create API key:", error.response?.data || error.message);
-    alert(`Failed to create API key: ${error.response?.data?.message || error.message}`);
-  }
-};
+  };
+
   const handleUpdateApiKey = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editApiKey) return;
@@ -149,18 +169,22 @@ export default function ProjectPage() {
         throw new Error("Failed to retrieve session token");
       }
 
-      const response = await axios.put(`/api/apikeys/${editApiKey.id}`, {
-        name: editApiKey.name,
-        key: editApiKey.key,
-      }, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await axios.put(
+        `/api/apikeys/${editApiKey.id}`,
+        {
+          name: editApiKey.name,
+          key: editApiKey.key,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
 
       const projectRes = await axios.get(`/api/projects/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setProject(projectRes.data);
-      
+
       setEditingApiKeyId(null);
       setEditApiKey(null);
       alert("API key updated successfully");
@@ -185,7 +209,7 @@ export default function ProjectPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       setProject(projectRes.data);
-      
+
       alert("API key deleted successfully");
     } catch (error: any) {
       console.error("Failed to delete API key:", error.response?.data || error.message);
@@ -204,18 +228,14 @@ export default function ProjectPage() {
     e.preventDefault();
     try {
       const token = await getToken();
-      console.log("Issue Creation - Token:", token);
       if (!token) {
         throw new Error("Failed to retrieve session token");
       }
 
       const issueData = { ...newIssue, projectId: id };
-      console.log("Issue Creation - Data:", issueData);
-
       const response = await axios.post("/api/issues", issueData, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      console.log("Issue Creation - Response:", response.data);
 
       setNewIssue({ title: "", description: "", priority: "low", status: "open" });
       const issuesRes = await axios.get(`/api/issues?projectId=${id}`, {
@@ -232,8 +252,6 @@ export default function ProjectPage() {
     e.preventDefault();
     try {
       const token = await getToken();
-      console.log("Project Update - Token:", token);
-
       if (!token || !editableProject) {
         throw new Error("Missing token or project data");
       }
@@ -247,21 +265,15 @@ export default function ProjectPage() {
         leader: editableProject.leader,
       };
 
-      console.log("Project Update - Sending data:", updateData);
-
       const response = await axios.put(`/api/projects/${id}`, updateData, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      console.log("Project Update - Response:", response.data);
       setProject(response.data);
       setEditableProject(null);
       alert("Project updated successfully");
     } catch (error: any) {
-      console.error("Project update failed:");
-      console.error("Error:", error.response?.data || error.message);
-      console.error("Status:", error.response?.status);
-      
+      console.error("Project update failed:", error.response?.data || error.message);
       if (error.response?.status === 404) {
         alert("Project not found or you don't have permission to update it.");
       } else if (error.response?.status === 401) {
@@ -309,7 +321,6 @@ export default function ProjectPage() {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-      console.log("Issue Update - Response:", response.data);
 
       setIssues(
         issues.map((issue) =>
@@ -340,19 +351,27 @@ export default function ProjectPage() {
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case "high": return "bg-red-100 text-red-800 border-red-200";
-      case "medium": return "bg-yellow-100 text-yellow-800 border-yellow-200";
-      case "low": return "bg-green-100 text-green-800 border-green-200";
-      default: return "bg-gray-100 text-gray-800 border-gray-200";
+      case "high":
+        return "bg-red-100 text-red-800 border-red-200";
+      case "medium":
+        return "bg-yellow-100 text-yellow-800 border-yellow-200";
+      case "low":
+        return "bg-green-100 text-green-800 border-green-200";
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200";
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "open": return "bg-blue-100 text-blue-800 border-blue-200";
-      case "in-progress": return "bg-orange-100 text-orange-800 border-orange-200";
-      case "closed": return "bg-green-100 text-green-800 border-green-200";
-      default: return "bg-gray-100 text-gray-800 border-gray-200";
+      case "open":
+        return "bg-blue-100 text-blue-800 border-blue-200";
+      case "in-progress":
+        return "bg-orange-100 text-orange-800 border-orange-200";
+      case "closed":
+        return "bg-green-100 text-green-800 border-green-200";
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200";
     }
   };
 
@@ -360,27 +379,50 @@ export default function ProjectPage() {
     if (key.length <= 8) return "********";
     return `${key.slice(0, 4)}${"*".repeat(key.length - 8)}${key.slice(-4)}`;
   };
-
-  if (!project) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-6xl text-gray-300 mb-4">📁</div>
-          <h2 className="text-xl font-semibold text-gray-700 mb-2">Project not found</h2>
-          <p className="text-gray-500 mb-4">The project you're looking for doesn't exist or you don't have access to it.</p>
-          <Link href="/dashboard" className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-            ← Back to Dashboard
-          </Link>
-        </div>
+if (loading) {
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600 mx-auto mb-4"></div>
+        <p className="text-gray-600">Loading project...</p>
       </div>
-    );
-  }
+    </div>
+  );
+}
+
+if (!loading && !project) {
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center">
+        <div className="text-6xl text-gray-300 mb-4">📁</div>
+        <h2 className="text-xl font-semibold text-gray-700 mb-2">Project not found</h2>
+        <p className="text-gray-500 mb-4">
+          The project you're looking for doesn't exist or you don't have access to it.
+        </p>
+        <Link
+          href="/dashboard"
+          className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          ← Back to Dashboard
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+// Add this additional check
+if (!project) {
+  return null; // or return a loading spinner
+}
 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="mb-8">
-          <Link href="/dashboard" className="inline-flex items-center text-blue-600 hover:text-blue-800 mb-6 transition-colors">
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center text-blue-600 hover:text-blue-800 mb-6 transition-colors"
+          >
             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
@@ -512,7 +554,7 @@ export default function ProjectPage() {
                 </div>
                 <button
                   onClick={() => setEditableProject(project)}
-                  className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors font-medium"
+                  className="px-4 py-2 bg-yellow-500 text-white rounded-lg{FIXME: missing space}hover:bg-yellow-600 transition-colors font-medium"
                 >
                   Edit Project
                 </button>
@@ -537,46 +579,53 @@ export default function ProjectPage() {
                   rel="noopener noreferrer"
                 >
                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
                   </svg>
                   View on GitHub
                 </a>
               </div>
               <div className="pt-4">
-  <h3 className="text-lg font-semibold text-gray-800 mb-2">API Keys</h3>
-  {!project.apiKeys || project.apiKeys.length === 0 ? (
-    <p className="text-gray-500 text-sm">No API keys available.</p>
-  ) : (
-    <div className="space-y-2">
-      {project.apiKeys.map((apiKey) => (
-        <div key={apiKey.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border">
-          <div>
-            <span className="text-sm font-medium text-gray-700">{apiKey.name}: </span>
-            <span className="text-sm font-mono text-gray-600">{maskApiKey(apiKey.key)}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => handleCopyApiKey(apiKey.key, apiKey.id)}
-              className="px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
-            >
-              {copiedApiKeyId === apiKey.id ? "Copied!" : "Copy"}
-            </button>
-            <button
-              onClick={() => {
-                if (window.confirm(`Are you sure you want to delete the API key "${apiKey.name}"? This action cannot be undone.`)) {
-                  handleDeleteApiKey(apiKey.id);
-                }
-              }}
-              className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium"
-            >
-              Delete
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  )}
-</div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-2">API Keys</h3>
+                {!project.apiKeys || project.apiKeys.length === 0 ? (
+                  <p className="text-gray-500 text-sm">No API keys available.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {project.apiKeys.map((apiKey) => (
+                      <div
+                        key={apiKey.id}
+                        className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border"
+                      >
+                        <div>
+                          <span className="text-sm font-medium text-gray-700">{apiKey.name}: </span>
+                          <span className="text-sm font-mono text-gray-600">{maskApiKey(apiKey.key)}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleCopyApiKey(apiKey.key, apiKey.id)}
+                            className="px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
+                          >
+                            {copiedApiKeyId === apiKey.id ? "Copied!" : "Copy"}
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `Are you sure you want to delete the API key "${apiKey.name}"? This action cannot be undone.`
+                                )
+                              ) {
+                                handleDeleteApiKey(apiKey.id);
+                              }
+                            }}
+                            className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -647,9 +696,7 @@ export default function ProjectPage() {
                   <input
                     type="text"
                     value={newIssue.title}
-                    onChange={(e) =>
-                      setNewIssue({ ...newIssue, title: e.target.value })
-                    }
+                    onChange={(e) => setNewIssue({ ...newIssue, title: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
                     placeholder="Enter issue title..."
                     required
@@ -659,9 +706,7 @@ export default function ProjectPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
                   <textarea
                     value={newIssue.description}
-                    onChange={(e) =>
-                      setNewIssue({ ...newIssue, description: e.target.value })
-                    }
+                    onChange={(e) => setNewIssue({ ...newIssue, description: e.target.value })}
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
                     placeholder="Describe the issue..."
@@ -671,9 +716,7 @@ export default function ProjectPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
                   <select
                     value={newIssue.priority}
-                    onChange={(e) =>
-                      setNewIssue({ ...newIssue, priority: e.target.value })
-                    }
+                    onChange={(e) => setNewIssue({ ...newIssue, priority: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
                   >
                     <option value="low">Low</option>
@@ -696,7 +739,9 @@ export default function ProjectPage() {
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
                 <div className="text-6xl text-gray-300 mb-4">📋</div>
                 <h3 className="text-lg font-semibold text-gray-700 mb-2">No issues yet</h3>
-                <p className="text-gray-500">Create your first issue to get started tracking work on this project.</p>
+                <p className="text-gray-500">
+                  Create your first issue to get started tracking work on this project.
+                </p>
               </div>
             ) : (
               issues.map((issue) => (
@@ -710,9 +755,7 @@ export default function ProjectPage() {
                           <input
                             type="text"
                             value={editIssue?.title || ""}
-                            onChange={(e) =>
-                              setEditIssue({ ...editIssue!, title: e.target.value })
-                            }
+                            onChange={(e) => setEditIssue({ ...editIssue!, title: e.target.value })}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
                             required
                           />
@@ -736,9 +779,7 @@ export default function ProjectPage() {
                             <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
                             <select
                               value={editIssue?.priority || "low"}
-                              onChange={(e) =>
-                                setEditIssue({ ...editIssue!, priority: e.target.value })
-                              }
+                              onChange={(e) => setEditIssue({ ...editIssue!, priority: e.target.value })}
                               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
                             >
                               <option value="low">Low</option>
@@ -750,9 +791,7 @@ export default function ProjectPage() {
                             <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
                             <select
                               value={editIssue?.status || "open"}
-                              onChange={(e) =>
-                                setEditIssue({ ...editIssue!, status: e.target.value })
-                              }
+                              onChange={(e) => setEditIssue({ ...editIssue!, status: e.target.value })}
                               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
                             >
                               <option value="open">Open</option>
@@ -810,18 +849,22 @@ export default function ProjectPage() {
                       </div>
                       <div className="flex items-center gap-4 pt-4 border-t border-gray-100">
                         <div className="flex items-center gap-2">
-                          <span className={`px-2 py-1 rounded-md text-xs font-medium border ${getStatusColor(issue.status)}`}>
-                            {issue.status.charAt(0).toUpperCase() + issue.status.slice(1).replace('-', ' ')}
+                          <span
+                            className={`px-2 py-1 rounded-md text-xs font-medium border ${getStatusColor(
+                              issue.status
+                            )}`}
+                          >
+                            {issue.status.charAt(0).toUpperCase() + issue.status.slice(1).replace("-", " ")}
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
                           <label className="text-sm font-medium text-gray-500">Priority:</label>
                           <select
                             value={issue.priority}
-                            onChange={(e) =>
-                              handlePriorityChange(issue.id, e.target.value)
-                            }
-                            className={`px-2 py-1 border rounded-md text-xs font-medium ${getPriorityColor(issue.priority)}`}
+                            onChange={(e) => handlePriorityChange(issue.id, e.target.value)}
+                            className={`px-2 py-1 border rounded-md text-xs font-medium ${getPriorityColor(
+                              issue.priority
+                            )}`}
                           >
                             <option value="low">Low</option>
                             <option value="medium">Medium</option>
