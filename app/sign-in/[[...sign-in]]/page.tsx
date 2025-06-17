@@ -19,8 +19,4 @@ export default function SignInPage() {
       <SignIn />
     </div>
   );
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> 9b0a46bc028a20f502d3c8b395959f005c0158eb
