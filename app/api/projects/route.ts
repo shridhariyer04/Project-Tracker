@@ -16,12 +16,8 @@ export async function GET(req: Request) {
   }
   
   try {
-<<<<<<< HEAD
-    // Fetch projects for the user
-=======
     console.log('🚀 [GET /api/projects] - Querying for projects');
 
->>>>>>> 9b0a46bc028a20f502d3c8b395959f005c0158eb
     const userProjects = await db
       .select({ 
         id: projects.id,
@@ -36,44 +32,8 @@ export async function GET(req: Request) {
         updatedAt: projects.updatedAt,
       })
       .from(projects)
-      .where(eq(projects.userId, userId)); // ensure userId column is text()
+      .where(eq(projects.userId, userId));
 
-    console.log("Projects fetched:", userProjects);
-
-<<<<<<< HEAD
-    // Fetch API keys for each project
-    const projectsWithApiKeys = await Promise.all(
-      userProjects.map(async (project) => {
-        console.log("Fetching API keys for project:", project.id);
-
-        const projectApiKeys = await db
-          .select()
-          .from(apiKeys)
-          .where(eq(apiKeys.projectId, project.id)); // ensure projectId is correct type
-
-        return {
-          ...project,
-          apiKeys: projectApiKeys,
-        };
-      })
-    );
-
-    console.log(
-      "GET /api/projects - Final response for user",
-      userId,
-      ":",
-      projectsWithApiKeys
-    );
-
-    return NextResponse.json(projectsWithApiKeys);
-  } catch (error: any) {
-    console.error("GET /api/projects - Error:", JSON.stringify(error, null, 2));
-    if (error instanceof Error) {
-      console.error("Error.message:", error.message);
-      console.error("Error.stack:", error.stack);
-    }
-
-=======
     console.log('🚀 [GET /api/projects] - Fetched projects!', { count: userProjects.length });
 
     const projectsWithApiKeys = [];
@@ -98,7 +58,6 @@ export async function GET(req: Request) {
     return NextResponse.json(projectsWithApiKeys);
   } catch (error) {
     console.error('❌ [GET /api/projects] - Error!', error);
->>>>>>> 9b0a46bc028a20f502d3c8b395959f005c0158eb
     return NextResponse.json({ message: "Internal server error" }, { status: 500 });
   }
 }
@@ -115,22 +74,10 @@ export async function POST(req: Request) {
   }
   
   const body = await req.json();
-<<<<<<< HEAD
-  const {
-    name,
-    description,
-    githublink,
-    startDate,
-    endDate,
-    leader,
-    apiKeys: submittedApiKeys,
-  } = body;
-=======
 
   console.log('🚀 [POST /api/projects] - Received body!', body);
 
   const { name, description, githublink, startDate, endDate, leader, apiKeys: submittedApiKeys } = body;
->>>>>>> 9b0a46bc028a20f502d3c8b395959f005c0158eb
 
   if (!name || !githublink || !leader) {
     console.log('❌ [POST /api/projects] - Validation failed');
@@ -141,28 +88,18 @@ export async function POST(req: Request) {
   }
   
   try {
-<<<<<<< HEAD
-    const result = await db.transaction(async (tx) => {
-      // Insert project
-=======
     console.log('🚀 [POST /api/projects] - Starting transaction');
 
     const result = await db.transaction(async (tx) => {
       console.log('🚀 [POST /api/projects] - Inserting into projects');
->>>>>>> 9b0a46bc028a20f502d3c8b395959f005c0158eb
       const newProject = await tx
         .insert(projects)
         .values({ 
           name,
           description: description || null,
           githublink,
-<<<<<<< HEAD
-          leader,
-          userId, // ensure this is text() in schema
-=======
           leader: leader,
           userId: userId,
->>>>>>> 9b0a46bc028a20f502d3c8b395959f005c0158eb
           startDate: startDate ? new Date(startDate) : null,
           endDate: endDate ? new Date(endDate) : null,
           createdAt: new Date(), 
@@ -174,18 +111,11 @@ export async function POST(req: Request) {
 
       const projectId = newProject[0].id;
 
-<<<<<<< HEAD
-      // Handle API keys
-=======
->>>>>>> 9b0a46bc028a20f502d3c8b395959f005c0158eb
       let insertedApiKeys: typeof apiKeys.$inferSelect[] = [];
 
       if (submittedApiKeys && submittedApiKeys.length > 0) {
-<<<<<<< HEAD
-=======
         console.log('🚀 [POST /api/projects] - API keys provided!', { count: submittedApiKeys.length });
 
->>>>>>> 9b0a46bc028a20f502d3c8b395959f005c0158eb
         const validApiKeys = submittedApiKeys.filter(
           (apiKey: any) => apiKey.name?.trim() && apiKey.key?.trim()
         );
@@ -198,17 +128,10 @@ export async function POST(req: Request) {
             .values(
               validApiKeys.map((apiKey: any) => ({
                 projectId,
-<<<<<<< HEAD
-                name: apiKey.name.trim(),
-                key: apiKey.key.trim(),
-                createdAt: new Date(),
-                updatedAt: new Date(),
-=======
                 name: apiKey.name.trim(), 
                 key: apiKey.key.trim(), 
                 createdAt: new Date(), 
                 updatedAt: new Date()
->>>>>>> 9b0a46bc028a20f502d3c8b395959f005c0158eb
               }))
             )
             .returning();
@@ -216,16 +139,6 @@ export async function POST(req: Request) {
           console.log('🚀 [POST /api/projects] - API keys successfully inserted!', { count: insertedApiKeys.length });
         }
       }
-<<<<<<< HEAD
-
-      return {
-        project: newProject[0],
-        apiKeys: insertedApiKeys,
-      };
-    });
-
-    console.log("POST /api/projects - Created project:", result);
-=======
   
       return { project: newProject[0], apiKeys: insertedApiKeys };
     });
@@ -235,26 +148,8 @@ export async function POST(req: Request) {
       ...result.project, 
       apiKeys: result.apiKeys 
     }, { status: 201 });
->>>>>>> 9b0a46bc028a20f502d3c8b395959f005c0158eb
 
-    return NextResponse.json(
-      {
-        ...result.project,
-        apiKeys: result.apiKeys,
-      },
-      { status: 201 }
-    );
   } catch (error: any) {
-<<<<<<< HEAD
-    console.error("POST /api/projects - Error:", JSON.stringify(error, null, 2));
-    if (error.message?.includes("API key already exists")) {
-      return NextResponse.json({ message: error.message }, { status: 409 });
-    }
-
-    return NextResponse.json({ message: "Internal server error" }, { status: 500 });
-  }
-}
-=======
     console.error('❌ [POST /api/projects] - Error!', error);
     if (error?.message?.includes("API key already exists")) {
       return NextResponse.json({ message: error?.message }, { status: 409 });
@@ -419,4 +314,3 @@ export async function POST(req: Request) {
 //     return NextResponse.json({ message: "Internal server error" }, { status: 500 });
 //   }
 // }
->>>>>>> 9b0a46bc028a20f502d3c8b395959f005c0158eb
